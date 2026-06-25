@@ -39,7 +39,7 @@ const signup = async (req, res) => {
 
 const login = async (req, res) => {
   try {
-    const { email, password, role } = req.body;
+    const { email, password } = req.body;
 
     const user = await User.findOne({ email });
 
@@ -54,7 +54,7 @@ const login = async (req, res) => {
       user.password
     );
 
-    if (!isMatch || user.role !== role) {
+    if (!isMatch) {
       return res.status(401).json({
         message: "Invalid Credentials",
       });
