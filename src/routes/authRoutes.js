@@ -1,23 +1,15 @@
 const express = require("express");
-
 const router = express.Router();
 
 const {
-  signup,
   login,
   getProfile,
+  updateProfile,
+  changePassword,
 } = require("../controllers/authController");
 
-const {
-  protect,
-} = require("../middleware/authMiddleware");
+const { protect } = require("../middleware/authMiddleware");
 
-/*
-=========================================
-Health Check
-GET /api/auth/test
-=========================================
-*/
 router.get("/test", (req, res) => {
   res.status(200).json({
     success: true,
@@ -25,28 +17,9 @@ router.get("/test", (req, res) => {
   });
 });
 
-/*
-=========================================
-Register User
-POST /api/auth/signup
-=========================================
-*/
-router.post("/signup", signup);
-
-/*
-=========================================
-Login User
-POST /api/auth/login
-=========================================
-*/
 router.post("/login", login);
-
-/*
-=========================================
-Logged In User Profile
-GET /api/auth/profile
-=========================================
-*/
 router.get("/profile", protect, getProfile);
+router.put("/profile", protect, updateProfile);
+router.put("/change-password", protect, changePassword);
 
 module.exports = router;

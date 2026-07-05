@@ -1,11 +1,7 @@
 const jwt = require("jsonwebtoken");
+const Admin = require("../models/Admin");
 const User = require("../models/User");
 
-/*
-=====================================
-Protect Routes
-=====================================
-*/
 const protect = async (req, res, next) => {
   try {
     let token;
@@ -31,24 +27,24 @@ const protect = async (req, res, next) => {
       });
     }
 
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET
-    );
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const user = await User.findById(decoded.id).select(
-      "-password"
-    );
+    let account;
+    if (decoded.role === "admin") {
+      account = await Admin.findById(decoded.id).select("-password");
+    } else {
+      account = await User.findById(decoded.id).select("-password");
+    }
 
-    if (!user) {
+    if (!account) {
       return res.status(401).json({
         success: false,
-        message: "User not found.",
+        message: "Account not found.",
       });
     }
 
-    req.user = user;
-
+    req.user = account;
+    req.user.role = decoded.role;
     next();
   } catch (error) {
     return res.status(401).json({
@@ -58,30 +54,15 @@ const protect = async (req, res, next) => {
   }
 };
 
-/*
-=====================================
-Admin Middleware
-=====================================
-*/
 const adminOnly = (req, res, next) => {
-  if (!req.user) {
-    return res.status(401).json({
-      success: false,
-      message: "Unauthorized access.",
-    });
-  }
-
-  if (req.user.role !== "admin") {
+  if (req.user && req.user.role === "admin") {
+    next();
+  } else {
     return res.status(403).json({
       success: false,
-      message: "Access denied. Admin privileges required.",
+      message: "Access denied. Admin only.",
     });
   }
-
-  next();
 };
 
-module.exports = {
-  protect,
-  adminOnly,
-};
+module.exports = { protect, adminOnly };

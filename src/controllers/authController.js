@@ -1,101 +1,12 @@
+const Admin = require("../models/Admin");
 const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
-/*
-=====================================
-Signup
-POST /api/auth/signup
-=====================================
-*/
-const signup = async (req, res) => {
-  try {
-    const {
-      firstName,
-      lastName,
-      email,
-      phone,
-      department,
-      designation,
-      password,
-    } = req.body;
-
-    // Required field validation
-    if (
-      !firstName ||
-      !lastName ||
-      !email ||
-      !phone ||
-      !password
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Please fill all required fields",
-      });
-    }
-
-    // Check existing user
-    const existingUser = await User.findOne({ email });
-
-    if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        message: "User already exists",
-      });
-    }
-
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Create normal user only
-    const user = await User.create({
-      firstName,
-      lastName,
-      email,
-      phone,
-      department,
-      designation,
-      role: "user",          // Prevent self-admin registration
-      status: "Active",
-      password: hashedPassword,
-    });
-
-    res.status(201).json({
-      success: true,
-      message: "User registered successfully",
-      data: {
-        id: user._id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        phone: user.phone,
-        department: user.department,
-        designation: user.designation,
-        role: user.role,
-        status: user.status,
-      },
-    });
-  } catch (error) {
-    console.error(error);
-
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-/*
-=====================================
-Login
-POST /api/auth/login
-=====================================
-*/
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Validation
     if (!email || !password) {
       return res.status(400).json({
         success: false,
@@ -103,21 +14,29 @@ const login = async (req, res) => {
       });
     }
 
-    // Find user
-    const user = await User.findOne({ email });
+    let account = await Admin.findOne({ email });
+    let role = "admin";
 
-    if (!user) {
+    if (!account) {
+      account = await User.findOne({ email });
+      role = "user";
+    }
+
+    if (!account) {
       return res.status(401).json({
         success: false,
         message: "Invalid Credentials",
       });
     }
 
-    // Compare password
-    const isMatch = await bcrypt.compare(
-      password,
-      user.password
-    );
+    if (role === "user" && account.status === "Inactive") {
+      return res.status(403).json({
+        success: false,
+        message: "Your account has been deactivated. Contact admin.",
+      });
+    }
+
+    const isMatch = await bcrypt.compare(password, account.password);
 
     if (!isMatch) {
       return res.status(401).json({
@@ -126,17 +45,10 @@ const login = async (req, res) => {
       });
     }
 
-    // Generate JWT
     const token = jwt.sign(
-      {
-        id: user._id,
-        email: user.email,
-        role: user.role,
-      },
+      { id: account._id, email: account.email, role },
       process.env.JWT_SECRET,
-      {
-        expiresIn: "1d",
-      }
+      { expiresIn: "1d" }
     );
 
     res.status(200).json({
@@ -145,62 +57,131 @@ const login = async (req, res) => {
       data: {
         token,
         user: {
-          id: user._id,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          phone: user.phone,
-          department: user.department,
-          designation: user.designation,
-          role: user.role,
-          status: user.status,
+          id: account._id,
+          name: account.name,
+          email: account.email,
+          phone: account.phone || "",
+          role,
+          theme: account.theme || "light",
         },
       },
     });
   } catch (error) {
     console.error(error);
-
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
-/*
-=====================================
-Get Logged In User Profile
-GET /api/auth/profile
-=====================================
-*/
 const getProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select("-password");
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
-
     res.status(200).json({
       success: true,
       message: "Profile fetched successfully",
-      data: user,
+      data: req.user,
     });
   } catch (error) {
     console.error(error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
 
-    res.status(500).json({
-      success: false,
-      message: error.message,
+const updateProfile = async (req, res) => {
+  try {
+    const { name, email, phone, theme } = req.body;
+    const Model = req.user.role === "admin" ? Admin : User;
+    const account = await Model.findById(req.user._id);
+
+    if (!account) {
+      return res.status(404).json({
+        success: false,
+        message: "Account not found",
+      });
+    }
+
+    if (email && email !== account.email) {
+      const existingAdmin = await Admin.findOne({ email });
+      const existingUser = await User.findOne({ email });
+      if (existingAdmin || existingUser) {
+        return res.status(400).json({
+          success: false,
+          message: "Email already in use",
+        });
+      }
+      account.email = email;
+    }
+
+    if (name !== undefined) account.name = name;
+    if (phone !== undefined) account.phone = phone;
+    if (theme !== undefined && Model === Admin) account.theme = theme;
+
+    await account.save();
+
+    const updated = await Model.findById(account._id).select("-password");
+
+    res.status(200).json({
+      success: true,
+      message: "Profile updated successfully",
+      data: updated,
     });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Current and new password are required",
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "New password must be at least 6 characters",
+      });
+    }
+
+    const Model = req.user.role === "admin" ? Admin : User;
+    const account = await Model.findById(req.user._id);
+
+    if (!account) {
+      return res.status(404).json({
+        success: false,
+        message: "Account not found",
+      });
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, account.password);
+
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: "Current password is incorrect",
+      });
+    }
+
+    account.password = newPassword;
+    await account.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Password changed successfully",
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
 module.exports = {
-  signup,
   login,
   getProfile,
+  updateProfile,
+  changePassword,
 };
