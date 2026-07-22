@@ -20,6 +20,7 @@ app.use(
   cors({
     origin: [
       "http://localhost:5173",
+      "https://react-admin-dashboard-two-gilt.vercel.app",
     ],
     credentials: true,
   })
